@@ -85,41 +85,49 @@ emailjs.init("bEyhtwp-H-41lvVf1"); // PUBLIC KEY
 let finalImageBase64 = "";
 
 /* ---------------- SMART PARSER ----------------- */
+<script>
 function parseText() {
   const text = document.getElementById("rawText").value.trim();
-  const parts = text.split(/\t+/);
+  const parts = text.split(/\t+/); // TAB separated
 
-  if (parts.length < 7) {
-    alert("Row format incorrect.");
+  if (parts.length < 13) {
+    alert("Spreadsheet row is incomplete.");
     return;
   }
 
-  const timestamp = parts[0];
-  const name = parts[1];
-  const email = parts[2];
-  const phone = parts[3];
-  const ticketTypeRaw = parts[4];
-  const quantity = parts[5];
-  const ticketId = parts[6];
+  const timestamp     = parts[0];
+  const fullName      = parts[1];
+  const email         = parts[2];
+  const whatsapp      = parts[3];
+  const ticketType    = parts[4];
+  const quantity      = parts[5];
+  const ticketId      = parts[6];
+  const qrUrl         = parts[7]; // optional
+  const paymentStatus = parts[8]; // optional
+  const totalPrice    = parts[10];
+  const eventName     = parts[11];
+  const eventVenue    = parts[12];
 
-  const ticketType = ticketTypeRaw.split("[")[0].trim();
-
-  let amount = "";
-  const amountMatch = ticketTypeRaw.match(/\[(.*?)\]/);
-  if (amountMatch) amount = amountMatch[1].replace(/[^0-9]/g, "");
-
-  document.getElementById("customer").value = name;
+  // Auto-fill fields
+  document.getElementById("customer").value = fullName;
   document.getElementById("email").value = email;
-  document.getElementById("phone").value = phone;
+  document.getElementById("phone").value = whatsapp;
   document.getElementById("ticketType").value = ticketType;
   document.getElementById("quantity").value = quantity;
   document.getElementById("bookingId").value = ticketId;
   document.getElementById("qrValue").value = ticketId;
-  document.getElementById("amountPaid").value = amount;
+  document.getElementById("amountPaid").value = totalPrice.replace(/[^0-9]/g, "");
   document.getElementById("paymentDate").value = timestamp;
-}
 
-/* --------------- GENERATE TICKET ---------------- */
+  // 🔥 Event info from spreadsheet
+  document.getElementById("eventName").value = eventName;
+  document.getElementById("venue").value = eventVenue;
+
+  // Optional defaults
+  document.getElementById("eventDate").value = "";
+  document.getElementById("eventTime").value = "";
+}
+</script>/* --------------- GENERATE TICKET ---------------- */
 function generateTicket() {
   const html = `
     <div id="ticket" style="
