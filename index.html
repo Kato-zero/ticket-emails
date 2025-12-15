@@ -1,226 +1,202 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Smart Ticket Generator & Auto-Sender</title>
+  <title>Smart Ticket Generator & QR Verification</title>
+
+  <!-- Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdn.emailjs.com/dist/email.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.7/minified/html5-qrcode.min.js"></script>
+
   <style>
     body { font-family: Arial; background:#f2f2f2; padding:20px; }
-    .container { max-width:450px; margin:auto; background:white; padding:20px; border-radius:12px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
+    .container { max-width:500px; margin:auto; background:white; padding:20px; border-radius:12px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
     label { font-size:14px; font-weight:bold; display:block; margin-top:10px; }
     input, textarea { width:100%; padding:8px; margin-top:5px; border:1px solid #ccc; border-radius:6px; }
     button { padding:12px; width:100%; border:none; background:#007bff; color:white; font-size:16px; border-radius:6px; cursor:pointer; margin-top:15px; }
-    button:hover { opacity:0.9; }
-
-    /* WhatsApp Button */
-    #whatsappBtn {
-        background:#25D366;
-        font-weight:bold;
-    }
+    #whatsappBtn { background:#25D366; font-weight:bold; }
+    #ticketArea { display:flex; justify-content:center; margin-top:20px; flex-direction:column; align-items:center; }
+    #verificationArea { margin-top:40px; text-align:center; }
+    /* Ticket row style */
+    .ticket-row { display:flex; justify-content:space-between; margin-bottom:6px; font-size:14px; }
+    .ticket-label { font-weight:bold; }
+    .ticket-value { font-weight:normal; }
   </style>
 </head>
-<body>
 
+<body>
 <div class="container">
   <h2>Smart Ticket Generator</h2>
 
+  <!-- Spreadsheet paste area -->
   <label>Paste Spreadsheet Row</label>
-  <textarea id="rawText" rows="4" placeholder="Paste your line here..."></textarea>
-
+  <textarea id="rawText" rows="4" placeholder="Paste your row here..."></textarea>
   <button onclick="parseText()">Auto-Fill</button>
 
-  <label>Event Name</label>
-  <input id="eventName" value"> 
-
-  <label>Booking / Ticket ID</label>
-  <input id="bookingId">
-
-  <label>Event Date</label>
-  <input id="eventDate">
-
-  <label>Event Time</label>
-  <input id="eventTime">
-
-  <label>Venue</label>
-  <input id="venue" value">
-
-  <label>Ticket Type</label>
-  <input id="ticketType">
-
-  <label>Quantity</label>
-  <input id="quantity">
-
-  <label>Customer Name</label>
-  <input id="customer">
-
-  <label>Email</label>
-  <input id="email">
-
-  <label>Phone</label>
-  <input id="phone">
-
-  <label>Payment Date/Time</label>
-  <input id="paymentDate">
-
-  <label>Amount Paid (K)</label>
-  <input id="amountPaid">
-
-  <label>QR Value (Ticket ID)</label>
-  <input id="qrValue">
+  <!-- Ticket form fields -->
+  <label>Event Name</label><input id="eventName">
+  <label>Booking / Ticket ID</label><input id="bookingId">
+  <label>Event Date</label><input id="eventDate">
+  <label>Event Time</label><input id="eventTime">
+  <label>Venue</label><input id="venue">
+  <label>Ticket Type</label><input id="ticketType">
+  <label>Quantity</label><input id="quantity">
+  <label>Customer Name</label><input id="customer">
+  <label>Email</label><input id="email">
+  <label>Phone</label><input id="phone">
+  <label>Payment Date/Time</label><input id="paymentDate">
+  <label>Amount Paid (K)</label><input id="amountPaid">
+  <label>QR Value (Ticket ID)</label><input id="qrValue">
 
   <button onclick="generateTicket()">Generate Ticket</button>
-
   <button id="downloadBtn" style="display:none;" onclick="downloadTicket()">Download Ticket</button>
   <button id="sendBtn" style="display:none;" onclick="sendEmail()">Send via Email</button>
   <button id="whatsappBtn" style="display:none;" onclick="sendWhatsApp()">Send via WhatsApp</button>
+
+  <!-- Ticket display -->
+  <div id="ticketArea"></div>
+
+  <!-- QR Verification -->
+  <div id="verificationArea">
+    <h3>QR Ticket Verification</h3>
+    <div id="reader" style="width:300px; margin:auto;"></div>
+    <p id="verificationResult" style="font-weight:bold; margin-top:10px;"></p>
+  </div>
 </div>
 
-<br>
-<div id="ticketArea" style="text-align:center;"></div>
-
 <script>
-emailjs.init("bEyhtwp-H-41lvVf1"); // PUBLIC KEY
+emailjs.init("bEyhtwp-H-41lvVf1"); // your public key
 let finalImageBase64 = "";
+let validTickets = []; // store all parsed ticket IDs
 
-/* ---------------- SMART PARSER ----------------- */
-<script>
+// ---------------- PARSE SPREADSHEET ----------------
 function parseText() {
-  const text = document.getElementById("rawText").value.trim();
-  const parts = text.split(/\t+/); // TAB separated
+  const raw = document.getElementById("rawText").value.trim();
+  if(!raw) return alert("No spreadsheet row pasted.");
 
-  if (parts.length < 13) {
-    alert("Spreadsheet row is incomplete.");
+  let parts = raw.split("\t").map(p => p.trim());
+  parts = parts.slice(0, 12); // first 12 columns
+
+  if(parts.length < 12){
+    alert(`Spreadsheet row incomplete. Columns found: ${parts.length}`);
     return;
   }
 
-  const timestamp     = parts[0];
-  const fullName      = parts[1];
-  const email         = parts[2];
-  const whatsapp      = parts[3];
-  const ticketType    = parts[4];
-  const quantity      = parts[5];
-  const ticketId      = parts[6];
-  const qrUrl         = parts[7]; // optional
-  const paymentStatus = parts[8]; // optional
-  const totalPrice    = parts[10];
-  const eventName     = parts[11];
-  const eventVenue    = parts[12];
+  const timestamp   = parts[0];
+  const fullName    = parts[1];
+  const email       = parts[2];
+  const whatsapp    = parts[3];
+  const ticketType  = parts[4];
+  const quantity    = parts[5];
+  const ticketId    = parts[6];
+  const totalPrice  = parts[7];
+  const eventName   = parts[8];
+  const eventVenue  = parts[9];
+  const eventTime   = parts[10];
+  const eventDate   = parts[11];
 
-  // Auto-fill fields
-  document.getElementById("customer").value = fullName;
-  document.getElementById("email").value = email;
-  document.getElementById("phone").value = whatsapp;
-  document.getElementById("ticketType").value = ticketType;
-  document.getElementById("quantity").value = quantity;
-  document.getElementById("bookingId").value = ticketId;
-  document.getElementById("qrValue").value = ticketId;
-  document.getElementById("amountPaid").value = totalPrice.replace(/[^0-9]/g, "");
-  document.getElementById("paymentDate").value = timestamp;
+  document.getElementById("customer").value     = fullName;
+  document.getElementById("email").value        = email;
+  document.getElementById("phone").value        = whatsapp;
+  document.getElementById("ticketType").value   = ticketType;
+  document.getElementById("quantity").value     = quantity;
+  document.getElementById("bookingId").value    = ticketId;
+  document.getElementById("qrValue").value      = ticketId;
+  document.getElementById("amountPaid").value   = totalPrice.replace(/\D/g,"");
+  document.getElementById("paymentDate").value  = timestamp;
+  document.getElementById("eventName").value    = eventName;
+  document.getElementById("venue").value        = eventVenue;
+  document.getElementById("eventTime").value    = eventTime;
+  document.getElementById("eventDate").value    = eventDate;
 
-  // 🔥 Event info from spreadsheet
-  document.getElementById("eventName").value = eventName;
-  document.getElementById("venue").value = eventVenue;
-
-  // Optional defaults
-  document.getElementById("eventDate").value = "";
-  document.getElementById("eventTime").value = "";
+  validTickets.push(ticketId); // store for verification
+  alert("Spreadsheet row parsed successfully ✅");
 }
-</script>/* --------------- GENERATE TICKET ---------------- */
+
+// ---------------- GENERATE TICKET ----------------
 function generateTicket() {
-  const html = `
-    <div id="ticket" style="
-        width: 340px;
-        padding: 0;
-        background: white;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 0 15px rgba(0,0,0,0.25);
-    ">
-        <div style="
-            background: #111;
-            padding: 12px;
-            text-align:center;
-        ">
-            <img src="logo.png" style="width:120px;">
-        </div>
-
-        <div style="padding:20px; text-align:center; position:relative;">
-            <div style="position:absolute; left:0; top:0; width:10px; height:100%; background:#111;"></div>
-            <div style="position:absolute; right:0; top:0; width:10px; height:100%; background:#111;"></div>
-
-            <h2 style="margin-top:0;">Event Ticket</h2>
-            <p><strong>Booking ID:</strong> ${bookingId.value}</p>
-            <p><strong>Name:</strong> ${customer.value}</p>
-            <p><strong>Email:</strong> ${email.value}</p>
-            <p><strong>Phone:</strong> ${phone.value}</p>
-            <p><strong>Event:</strong> ${eventName.value}</p>
-            <p><strong>Date:</strong> ${eventDate.value}</p>
-            <p><strong>Time:</strong> ${eventTime.value}</p>
-            <p><strong>Venue:</strong> ${venue.value}</p>
-            <p><strong>Ticket:</strong> ${ticketType.value} x${quantity.value}</p>
-            <p><strong>Paid:</strong> K${amountPaid.value}</p>
-
-            <div id="qrBox" style="margin-top:10px;"></div>
-        </div>
+  const ticketHTML = `
+    <div id="ticket" style="width:340px; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 0 15px rgba(0,0,0,.25); font-family:Arial;">
+      <div style="background:#111;padding:12px;text-align:center;">
+        <img src="logo.png" style="width:120px;">
+      </div>
+      <div style="padding:20px;">
+        <h2 style="text-align:center;">Event Ticket</h2>
+        <div class="ticket-row"><span class="ticket-label">Booking ID:</span><span class="ticket-value">${bookingId.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Name:</span><span class="ticket-value">${customer.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Event:</span><span class="ticket-value">${eventName.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Date:</span><span class="ticket-value">${eventDate.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Time:</span><span class="ticket-value">${eventTime.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Venue:</span><span class="ticket-value">${venue.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Ticket:</span><span class="ticket-value">${ticketType.value} x${quantity.value}</span></div>
+        <div class="ticket-row"><span class="ticket-label">Paid:</span><span class="ticket-value">K${amountPaid.value}</span></div>
+        
+        <div id="qrBox" style="display:flex; justify-content:center; margin-top:20px;"></div>
+      </div>
     </div>
   `;
+  document.getElementById("ticketArea").innerHTML = ticketHTML;
 
-  document.getElementById("ticketArea").innerHTML = html;
-
-  const qrBox = document.getElementById("qrBox");
-  qrBox.innerHTML = "";
-  new QRCode(qrBox, {
-    text: document.getElementById("qrValue").value,
-    width: 160,
-    height: 160
+  // Generate QR code (centered)
+  new QRCode(document.getElementById("qrBox"), {
+    text: qrValue.value,
+    width:160,
+    height:160
   });
 
-  setTimeout(() => {
-    document.getElementById("downloadBtn").style.display = "block";
-  }, 500);
+  document.getElementById("downloadBtn").style.display = "block";
+  document.getElementById("sendBtn").style.display = "block";
+  document.getElementById("whatsappBtn").style.display = "block";
 }
 
-/* ---------------- DOWNLOAD TICKET ---------------- */
+// ---------------- DOWNLOAD TICKET ----------------
 function downloadTicket() {
   html2canvas(document.getElementById("ticket")).then(canvas => {
-    const link = document.createElement("a");
-    link.download = "ticket.png";
-    link.href = canvas.toDataURL();
-    link.click();
-
     finalImageBase64 = canvas.toDataURL("image/png");
-
-    document.getElementById("sendBtn").style.display = "block";
-    document.getElementById("whatsappBtn").style.display = "block";
+    const a = document.createElement("a");
+    a.download = "ticket.png";
+    a.href = finalImageBase64;
+    a.click();
   });
 }
 
-/* ---------------- SEND EMAIL ---------------- */
+// ---------------- SEND EMAIL ----------------
 function sendEmail() {
-  const params = {
-    to_email: document.getElementById("email").value,
+  emailjs.send("service_185bxom","template_hff1xll",{
+    to_email: email.value,
     ticket_html: finalImageBase64
-  };
-
-  emailjs.send("service_185bxom","template_hff1xll", params)
-    .then(() => alert("Email sent!"))
-    .catch(e => alert("Email error: " + e));
+  }).then(() => alert("Email sent!")).catch(e => alert("Email error: "+e));
 }
 
-/* ---------------- SEND WHATSAPP ---------------- */
+// ---------------- SEND WHATSAPP ----------------
 function sendWhatsApp() {
-  let phone = document.getElementById("phone").value;
-  if (!phone) return alert("Phone number missing!");
-
-  phone = phone.replace(/[^0-9]/g, "");
-  if (!phone.startsWith("260")) phone = "260" + phone;
-
-  const msg = `Hello, your ticket is ready.\n\nHere is your ticket image:\n${finalImageBase64}`;
-
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+  let phoneNum = phone.value.replace(/\D/g,"");
+  if(!phoneNum.startsWith("260")) phoneNum = "260"+phoneNum;
+  window.open(`https://wa.me/${phoneNum}?text=Your ticket is ready`);
 }
-</script>
 
+// ---------------- QR VERIFICATION ----------------
+function startQRVerification() {
+  const html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    qrMessage => {
+      if(validTickets.includes(qrMessage)){
+        document.getElementById("verificationResult").innerText = "✅ Ticket Valid!";
+        document.getElementById("verificationResult").style.color = "green";
+      } else {
+        document.getElementById("verificationResult").innerText = "❌ Ticket Invalid!";
+        document.getElementById("verificationResult").style.color = "red";
+      }
+    },
+    errorMessage => { /* ignore scan errors */ }
+  ).catch(err => console.error("QR Start Error:", err));
+}
+
+// Start QR verification automatically
+startQRVerification();
+</script>
 </body>
-</html>
+  </html>
